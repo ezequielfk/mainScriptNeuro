@@ -1,0 +1,285 @@
+---
+title: "Scripts for Master en Neurociencias"
+author: "Flores-Kanter PE"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    theme: paper
+    highlight: pygments
+    toc: yes
+---
+
+#Data Processing Script
+
+```{r}
+if(!"devtools" %in% row.names(installed.packages())){
+  install.packages("devtools")
+}
+devtools::install_github("AlexChristensen/SemNeT")
+
+library(stringi)
+library(stringr)
+library(qdap)
+library(NLP)
+library(tm)
+library(SemNeT)
+library(NetworkToolbox)
+library(tidyverse)
+
+
+text.df<-read.csv("relatos.csv", sep = ";", header = TRUE) #Cambiar bases de acuerdo a los objetivos.
+grp<-read.csv("grupos.csv", sep = ";", header = TRUE) #Cambiar bases de acuerdo a los objetivos.
+
+#The first function is a wrapper for the base R tolower function.
+
+# Return NA instead of tolower error
+tryTolower <- function(x){
+# return NA when there is an error
+y = NA
+# tryCatch error
+try_error = tryCatch(tolower(x), error = function(e) e)
+# if not an error
+if (!inherits(try_error, 'error'))
+y = tolower(x)
+return(y)
+}
+
+#Next you will define our stopwords.
+custom.stopwords <- stopwords('spanish')
+
+
+#Next you will include the new tryTolower function as part of a larger preprocessing function. Here you create a function called clean.corpus.
+clean.corpus<-function(corpus){
+corpus <- tm_map(corpus,
+content_transformer(tryTolower))
+corpus <- tm_map(corpus, removeWords,
+custom.stopwords)
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, stripWhitespace)
+corpus <- tm_map(corpus, removeNumbers)
+return(corpus)
+}
+
+#Before applying these cleaning functions, you need to define the tweets object as your corpus or collection of natural language documents. Additionally you are preserving the metadata about each document.
+tweets<-data.frame(doc_id=seq(1:nrow(text.df)),text=text.df$Texto)
+
+corpus <- VCorpus(DataframeSource(tweets))
+
+#With all the preprocessing transformation functions organized you must now apply them to the DeltaAssist corpus.
+corpus<-clean.corpus(corpus)
+
+#Frequent Terms and Associations
+#First, you create a new object called tdm, which is a list object used by the tm package.
+tdm<-TermDocumentMatrix(corpus,control=list(weighting=weightTf))
+tdm.tweets.m<-as.matrix(tdm)
+
+
+
+## EGAnet (Golino)
+corpus.stem <- tm_map(corpus, stemDocument)
+dtm <- DocumentTermMatrix(corpus.stem)
+dtm.sparsity.rm <- removeSparseTerms(dtm, 0.90)
+
+dtm.data <- as.data.frame(as.matrix(dtm.sparsity.rm))
+head(dtm.data)
+colnames(dtm.data)
+
+
+##SemNet (Christensen)
+
+Abinar <- binarize(dtm.data)
+
+## Change column names (variable names)
+colnames(grp) <- c("conditions","times")
+
+
+# Attach 'Group' variable to the binary response matrix
+behav <- cbind(grp, Abinar)
+
+#write.csv(behav, "binaryResponse.csv", row.names = FALSE)
+
+
+# Create groups response matrices
+
+jovenest1 <-behav %>% 
+  filter(conditions=="jovenes" & times==1) %>% 
+select(-c("conditions","times"))
+
+
+jovenest2 <-behav %>% 
+  filter(conditions=="jovenes" & times==2) %>% 
+select(-c("conditions","times"))
+
+adultost1 <-behav %>% 
+  filter(conditions=="adultos" & times==1) %>% 
+select(-c("conditions","times"))
+
+adultost2 <-behav %>% 
+  filter(conditions=="adultos" & times==2) %>% 
+select(-c("conditions","times"))
+
+viejost1 <-behav %>% 
+  filter(conditions=="viejos" & times==1) %>% 
+select(-c("conditions","times"))
+
+viejost2 <-behav %>% 
+  filter(conditions=="viejos" & times==2) %>% 
+select(-c("conditions","times"))
+
+```
+
+#Data Analysis Script
+
+```{r}
+
+#---------------------------#
+# 2.1.2. Network estimation #
+#---------------------------#
+
+## TMFG
+
+### Finalize matrices so that each response has been given by at least two participants
+final.jt1 <- finalize(jovenest1, minCase = 2)
+final.jt2 <- finalize(jovenest2, minCase = 2)
+final.at1 <- finalize(adultost1, minCase = 2)
+final.at2 <- finalize(adultost2, minCase = 2)
+final.vt1 <- finalize(viejost1, minCase = 2)
+final.vt2 <- finalize(viejost2, minCase = 2)
+
+###
+### Equate the responses across the networks
+eq <- equate(final.jt1, final.jt2, final.at1, final.at2, final.vt1, final.vt2)
+
+equate.jt1 <- eq$final.jt1
+equate.jt2 <- eq$final.jt2
+equate.at1 <- eq$final.at1
+equate.at2 <- eq$final.at2
+equate.vt1 <- eq$final.vt1
+equate.vt2 <- eq$final.vt2
+
+
+### Compute cosine similarity for equated binary response matrices
+cosine.jt1 <- similarity(equate.jt1, method = "cosine")
+cosine.jt2 <- similarity(equate.jt2, method = "cosine")
+cosine.at1 <- similarity(equate.at1, method = "cosine")
+cosine.at2 <- similarity(equate.at2, method = "cosine")
+cosine.vt1 <- similarity(equate.vt1, method = "cosine")
+cosine.vt2 <- similarity(equate.vt2, method = "cosine")
+
+###
+### Estimate networks
+
+net.jt1 <- TMFG(cosine.jt1)
+net.jt2 <- TMFG(cosine.jt2)
+net.at1 <- TMFG(cosine.at1)
+net.at2 <- TMFG(cosine.at2)
+net.vt1 <- TMFG(cosine.vt1)
+net.vt2 <- TMFG(cosine.vt2)
+
+
+## Visualize networks
+
+netjt1_binar <- binarize(net.jt1$A)
+netjt2_binar <- binarize(net.jt2$A)
+netat1_binar <- binarize(net.at1$A)
+netat2_binar <- binarize(net.at2$A)
+netvt1_binar <- binarize(net.vt1$A)
+netvt2_binar <- binarize(net.vt2$A)
+
+
+
+compare_nets(netjt1_binar,netat1_binar,netvt1_binar, netjt2_binar,netat2_binar,netvt2_binar,
+  title = list(
+    "Jovenes/Time 1", "Adultos/Time 1", "Viejos/Time 1",
+    "Jovenes/Time 2", "Adultos/Time 2", "Viejos/Time 2"
+  )
+)
+
+
+
+
+##################################
+## 3.2. Global Network Measures ##
+##################################
+
+# Compute network measures
+semnetmeas(netjt1_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+semnetmeas(netjt2_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+semnetmeas(netat1_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+semnetmeas(netat2_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+semnetmeas(netvt1_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+semnetmeas(netvt2_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+
+
+
+
+############################
+## 3.3. Statistical Tests ##
+############################
+
+#----------------------------------------#
+# 3.3.2. Bootstrapped case-wise networks #
+#----------------------------------------#
+
+
+## Perform bootstrap networks
+
+boot <- bootSemNeT(jovenest1,adultost1,viejost1,jovenest2,adultost2,viejost2,
+  type = "case", method = "TMFG", sim = "cosine",
+  cores = 7, iter = 1000)
+
+
+## Compute tests
+results <- test.bootSemNeT(
+  boot,
+  test = "ANCOVA",
+  formula = "y ~ conditions*times",
+  groups = grp
+)
+
+
+# ASPL
+AsplANCOVA<- results$fullResults$Case$ASPL$ANCOVA
+results$fullResults$Case$ASPL$adjustedMeans
+results$fullResults$Case$ASPL$HSD
+
+# CC
+CCANCOVA<-results$fullResults$Case$CC$ANCOVA
+results$fullResults$Case$CC$adjustedMeans
+results$fullResults$Case$CC$HSD
+
+# Q
+QANCOVA<-results$fullResults$Case$Q$ANCOVA
+results$fullResults$Case$Q$adjustedMeans
+results$fullResults$Case$Q$HSD
+
+
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+# Plot Bootstrap ----
+
+## Plot bootstrap
+
+
+plot(
+  boot,
+   groups = c(
+    "Jovenes/Time 1", "Adultos/Time 1", "Viejos/Time 1",
+    "Jovenes/Time 2", "Adultos/Time 2", "Viejos/Time 2"
+     )
+    )
+  
+#plots <-   plot(
+ # boot,
+  #groups = c(
+  #  "Jovenes/Time 1", "Adultos/Time 1", "Viejos/Time 1",
+  #  "Jovenes/Time 2", "Adultos/Time 2", "Viejos/Time 2"
+  #)
+#)
+
+
+```
+
