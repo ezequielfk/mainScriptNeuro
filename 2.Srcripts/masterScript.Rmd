@@ -1,0 +1,204 @@
+---
+title: "Scripts for Master en Neurociencias"
+author: "Flores-Kanter PE"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    theme: paper
+    highlight: pygments
+    toc: yes
+---
+
+#Data Processing Script
+
+```{r}
+if(!"devtools" %in% row.names(installed.packages())){
+  install.packages("devtools")
+}
+devtools::install_github("AlexChristensen/SemNeT")
+
+library(stringi)
+library(stringr)
+library(qdap)
+library(NLP)
+library(tm)
+library(SemNeT)
+library(NetworkToolbox)
+library(tidyverse)
+
+
+text.df<-read.csv("relatos.csv", sep = ";", header = TRUE) #Cambiar bases de acuerdo a los objetivos.
+grp<-read.csv("grupos.csv", sep = ";", header = TRUE) #Cambiar bases de acuerdo a los objetivos.
+
+#The first function is a wrapper for the base R tolower function.
+
+# Return NA instead of tolower error
+tryTolower <- function(x){
+# return NA when there is an error
+y = NA
+# tryCatch error
+try_error = tryCatch(tolower(x), error = function(e) e)
+# if not an error
+if (!inherits(try_error, 'error'))
+y = tolower(x)
+return(y)
+}
+
+#Next you will define our stopwords.
+custom.stopwords <- stopwords('spanish')
+
+
+#Next you will include the new tryTolower function as part of a larger preprocessing function. Here you create a function called clean.corpus.
+clean.corpus<-function(corpus){
+corpus <- tm_map(corpus,
+content_transformer(tryTolower))
+corpus <- tm_map(corpus, removeWords,
+custom.stopwords)
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, stripWhitespace)
+corpus <- tm_map(corpus, removeNumbers)
+return(corpus)
+}
+
+#Before applying these cleaning functions, you need to define the tweets object as your corpus or collection of natural language documents. Additionally you are preserving the metadata about each document.
+tweets<-data.frame(doc_id=seq(1:nrow(text.df)),text=text.df$Texto)
+
+corpus <- VCorpus(DataframeSource(tweets))
+
+#With all the preprocessing transformation functions organized you must now apply them to the DeltaAssist corpus.
+corpus<-clean.corpus(corpus)
+
+#Frequent Terms and Associations
+#First, you create a new object called tdm, which is a list object used by the tm package.
+tdm<-TermDocumentMatrix(corpus,control=list(weighting=weightTf))
+tdm.tweets.m<-as.matrix(tdm)
+
+
+
+## EGAnet (Golino)
+corpus.stem <- tm_map(corpus, stemDocument)
+dtm <- DocumentTermMatrix(corpus.stem)
+dtm.sparsity.rm <- removeSparseTerms(dtm, 0.90)
+
+dtm.data <- as.data.frame(as.matrix(dtm.sparsity.rm))
+head(dtm.data)
+colnames(dtm.data)
+
+
+##SemNet (Christensen)
+
+Abinar <- binarize(dtm.data)
+
+## Change column names (variable names)
+colnames(grp) <- c("conditions","times")
+
+
+# Attach 'Group' variable to the binary response matrix
+behav <- cbind(grp, Abinar)
+
+#write.csv(behav, "binaryResponse.csv", row.names = FALSE)
+
+
+# Create groups response matrices
+
+jovenest1 <-behav %>% 
+  filter(conditions=="jovenes" & times==1) %>% 
+select(-c("conditions","times"))
+
+
+jovenest2 <-behav %>% 
+  filter(conditions=="jovenes" & times==2) %>% 
+select(-c("conditions","times"))
+
+adultost1 <-behav %>% 
+  filter(conditions=="adultos" & times==1) %>% 
+select(-c("conditions","times"))
+
+adultost2 <-behav %>% 
+  filter(conditions=="adultos" & times==2) %>% 
+select(-c("conditions","times"))
+
+viejost1 <-behav %>% 
+  filter(conditions=="viejos" & times==1) %>% 
+select(-c("conditions","times"))
+
+viejost2 <-behav %>% 
+  filter(conditions=="viejos" & times==2) %>% 
+select(-c("conditions","times"))
+
+```
+
+#Data Analysis Script
+
+```{r}
+
+############################
+## 3.3. Statistical Tests ##
+############################
+
+#----------------------------------------#
+# 3.3.2. Bootstrapped case-wise networks #
+#----------------------------------------#
+
+
+## Perform bootstrap networks
+
+boot <- bootSemNeT(jovenest1,adultost1,viejost1,jovenest2,adultost2,viejost2,
+  type = "case", method = "TMFG", sim = "cosine",
+  cores = 7, iter = 1000)
+
+
+## Compute tests
+results <- test.bootSemNeT(
+  boot,
+  test = "ANCOVA",
+  formula = "y ~ conditions*times",
+  groups = grp
+)
+
+
+# ASPL
+AsplANCOVA<- results$fullResults$Case$ASPL$ANCOVA
+results$fullResults$Case$ASPL$adjustedMeans
+results$fullResults$Case$ASPL$HSD
+
+# CC
+CCANCOVA<-results$fullResults$Case$CC$ANCOVA
+results$fullResults$Case$CC$adjustedMeans
+results$fullResults$Case$CC$HSD
+
+# Q
+QANCOVA<-results$fullResults$Case$Q$ANCOVA
+results$fullResults$Case$Q$adjustedMeans
+results$fullResults$Case$Q$HSD
+
+
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+# Plot Bootstrap ----
+
+## Plot bootstrap
+
+
+plot(
+  boot,
+   groups = c(
+    "Jovenes/Time 1", "Adultos/Time 1", "Viejos/Time 1",
+    "Jovenes/Time 2", "Adultos/Time 2", "Viejos/Time 2"
+     )
+    )
+  
+#plots <-   plot(
+ # boot,
+  #groups = c(
+  #  "Jovenes/Time 1", "Adultos/Time 1", "Viejos/Time 1",
+  #  "Jovenes/Time 2", "Adultos/Time 2", "Viejos/Time 2"
+  #)
+#)
+
+
+```
+
