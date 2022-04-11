@@ -11,8 +11,6 @@ output:
     toc: yes
 ---
 
-#Data Processing Script
-
 ```{r}
 if(!"devtools" %in% row.names(installed.packages())){
   install.packages("devtools")
@@ -27,7 +25,12 @@ library(tm)
 library(SemNeT)
 library(NetworkToolbox)
 library(tidyverse)
+```
 
+
+#Data Processing Script
+
+```{r}
 
 text.df<-read.csv("relatos.csv", sep = ";", header = TRUE) #Cambiar bases de acuerdo a los objetivos.
 grp<-read.csv("grupos.csv", sep = ";", header = TRUE) #Cambiar bases de acuerdo a los objetivos.
@@ -112,13 +115,6 @@ jovenest2 <-behav %>%
   filter(conditions=="jovenes" & times==2) %>% 
 select(-c("conditions","times"))
 
-adultost1 <-behav %>% 
-  filter(conditions=="adultos" & times==1) %>% 
-select(-c("conditions","times"))
-
-adultost2 <-behav %>% 
-  filter(conditions=="adultos" & times==2) %>% 
-select(-c("conditions","times"))
 
 viejost1 <-behav %>% 
   filter(conditions=="viejos" & times==1) %>% 
@@ -134,6 +130,75 @@ select(-c("conditions","times"))
 
 ```{r}
 
+#---------------------------#
+# 2.1.2. Network estimation #
+#---------------------------#
+
+## TMFG
+
+### Finalize matrices so that each response has been given by at least two participants
+final.jt1 <- finalize(jovenest1, minCase = 2)
+final.jt2 <- finalize(jovenest2, minCase = 2)
+final.vt1 <- finalize(viejost1, minCase = 2)
+final.vt2 <- finalize(viejost2, minCase = 2)
+
+###
+### Equate the responses across the networks
+eq <- equate(final.jt1, final.jt2, final.vt1, final.vt2)
+
+equate.jt1 <- eq$final.jt1
+equate.jt2 <- eq$final.jt2
+equate.vt1 <- eq$final.vt1
+equate.vt2 <- eq$final.vt2
+
+
+### Compute cosine similarity for equated binary response matrices
+cosine.jt1 <- similarity(equate.jt1, method = "cosine")
+cosine.jt2 <- similarity(equate.jt2, method = "cosine")
+cosine.vt1 <- similarity(equate.vt1, method = "cosine")
+cosine.vt2 <- similarity(equate.vt2, method = "cosine")
+
+###
+### Estimate networks
+
+net.jt1 <- TMFG(cosine.jt1)
+net.jt2 <- TMFG(cosine.jt2)
+net.vt1 <- TMFG(cosine.vt1)
+net.vt2 <- TMFG(cosine.vt2)
+
+
+## Visualize networks
+
+netjt1_binar <- binarize(net.jt1$A)
+netjt2_binar <- binarize(net.jt2$A)
+netvt1_binar <- binarize(net.vt1$A)
+netvt2_binar <- binarize(net.vt2$A)
+
+
+
+compare_nets(netjt1_binar,netvt1_binar, netjt2_binar,netvt2_binar,
+  title = list(
+    "Jovenes/Time 1",  "Viejos/Time 1",
+    "Jovenes/Time 2",  "Viejos/Time 2"
+  )
+)
+
+
+
+
+##################################
+## 3.2. Global Network Measures ##
+##################################
+
+# Compute network measures
+semnetmeas(netjt1_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+semnetmeas(netjt2_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+semnetmeas(netvt1_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+semnetmeas(netvt2_binar, meas = c("ASPL", "CC", "Q"), weighted = FALSE)
+
+
+
+
 ############################
 ## 3.3. Statistical Tests ##
 ############################
@@ -145,7 +210,7 @@ select(-c("conditions","times"))
 
 ## Perform bootstrap networks
 
-boot <- bootSemNeT(jovenest1,adultost1,viejost1,jovenest2,adultost2,viejost2,
+boot <- bootSemNeT(jovenest1,viejost1,jovenest2,viejost2,
   type = "case", method = "TMFG", sim = "cosine",
   cores = 7, iter = 1000)
 
@@ -186,8 +251,8 @@ results$fullResults$Case$Q$HSD
 plot(
   boot,
    groups = c(
-    "Jovenes/Time 1", "Adultos/Time 1", "Viejos/Time 1",
-    "Jovenes/Time 2", "Adultos/Time 2", "Viejos/Time 2"
+    "Jovenes/Time 1",  "Viejos/Time 1",
+    "Jovenes/Time 2",  "Viejos/Time 2"
      )
     )
   

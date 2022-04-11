@@ -10,9 +10,6 @@ output:
     highlight: pygments
     toc: yes
 ---
-
-#Data Processing Script
-
 ```{r}
 if(!"devtools" %in% row.names(installed.packages())){
   install.packages("devtools")
@@ -27,8 +24,10 @@ library(tm)
 library(SemNeT)
 library(NetworkToolbox)
 library(tidyverse)
+```
+#Data Processing Script
 
-
+```{r}
 text.df<-read.csv("relatos.csv", sep = ";", header = TRUE) #Cambiar bases de acuerdo a los objetivos.
 grp<-read.csv("grupos.csv", sep = ";", header = TRUE) #Cambiar bases de acuerdo a los objetivos.
 
@@ -112,13 +111,6 @@ jovenest2 <-behav %>%
   filter(conditions=="jovenes" & times==2) %>% 
 select(-c("conditions","times"))
 
-adultost1 <-behav %>% 
-  filter(conditions=="adultos" & times==1) %>% 
-select(-c("conditions","times"))
-
-adultost2 <-behav %>% 
-  filter(conditions=="adultos" & times==2) %>% 
-select(-c("conditions","times"))
 
 viejost1 <-behav %>% 
   filter(conditions=="viejos" & times==1) %>% 
